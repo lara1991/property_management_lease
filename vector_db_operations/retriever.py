@@ -28,54 +28,86 @@ def _get_embedding_function() -> SentenceTransformerEmbeddingFunction:
         )
     return SentenceTransformerEmbeddingFunction(model_name=model_name)
 
-client = chromadb.PersistentClient(path=DEFAULT_PERSIST_DIR)
-embedding_fn = _get_embedding_function()
-collection = client.get_collection(
-    name=COLLECTION_NAME, embedding_function=embedding_fn
-)
-
 def retrieve_from_knowledge_base(
     query: str,
-) -> RetrievalResult:
+) -> str:
     """
-    Retrieve the most relevant text chunks and their embeddings for a query.
+    Search the Apex Property Management policy knowledge base and return
+    relevant policy text for the given query.
 
-    The query is embedded with the same model used at indexing time (loaded
-    from the ``EMBEDDING_MODEL`` environment variable).  ChromaDB ranks
-    results by cosine distance; lower distance means higher relevance.
+    Use targeted queries that mention the specific unit type and policy
+    aspect you need, e.g. "income ratio requirement Apt 402" or
+    "pet weight limit Townhouse Suite". Call this tool multiple times
+    with different queries if you need policy on more than one topic.
 
     Args:
-        query: Natural-language query string.
+        query: Natural-language query describing the policy to look up.
 
     Returns:
-        A :class:`RetrievalResult` with parallel lists of ids, documents,
-        metadatas, and distances for each returned chunk.
+        Relevant policy excerpts as plain text, ranked by relevance.
     """
 
-    results = collection.query(
-        query_texts=[query],
-        n_results=N_RESULTS,
-        include=["documents", "metadatas", "distances"],
-    )
+    # client = chromadb.PersistentClient(path=DEFAULT_PERSIST_DIR)
+    # embedding_fn = _get_embedding_function()
+    # collection = client.get_collection(
+    #     name=COLLECTION_NAME, embedding_function=embedding_fn
+    # )
+    # results = collection.query(
+    #     query_texts=[query],
+    #     n_results=N_RESULTS,
+    #     include=["documents", "metadatas", "distances"],
+    # )
 
-    # collection.query returns lists-of-lists (one per query); unwrap the single query
-    return RetrievalResult(
-        ids=results["ids"][0],
-        documents=results["documents"][0],
-        metadatas=results["metadatas"][0],
-        distances=results["distances"][0],
-    )
+    # --- DUMMY DATA: remove when vector DB is ready ---
+    _DUMMY_CHUNKS = [
+        {
+            "id": "chunk_001",
+            "document": (
+                "Section 1: Standard Multi-Family Units (Apt 400 - Apt 499). "
+                "Target units: Apt 402, Apt 405, Apt 410. "
+                "Income-to-Rent Ratio: applicant must demonstrate a verified gross monthly income of at least 3.0x "
+                "the stated base rental price. "
+                "Pet Policy: domesticated cats and dogs permitted up to a maximum of 25 lbs per animal. "
+                "Large breeds or exotic pets require written manual exception forms. "
+                "Occupancy Limit: maximum 2 residents per studio/1-bedroom configuration."
+            ),
+            "metadata": {"doc_name": "building_rules_and_eligibility.md", "chunk_index": 0, "section": "Apt 400-499"},
+            "distance": 0.12,
+        },
+        {
+            "id": "chunk_002",
+            "document": (
+                "Section 2: Residential Townhouse Clusters (Suite A - Suite Z). "
+                "Target units: Townhouse Suite B, Townhouse Suite F. "
+                "Income-to-Rent Ratio: baseline income requires a 2.5x multiplier relative to base rent. "
+                "Pet Policy: medium/large breed animals allowed up to 75 lbs per animal due to private yard access. "
+                "Occupancy Limit: maximum 4 residents per layout."
+            ),
+            "metadata": {"doc_name": "building_rules_and_eligibility.md", "chunk_index": 1, "section": "Townhouse Suite A-Z"},
+            "distance": 0.18,
+        },
+        {
+            "id": "chunk_003",
+            "document": (
+                "Section 3: Premium Studios (Studio 100 - Studio 150). "
+                "Target units: Luxury Studio 101, Luxury Studio 102. "
+                "Income-to-Rent Ratio: high density urban tiers mandate a 3.5x verified underwriting threshold. "
+                "Pet Policy: STRICTLY NO PETS ALLOWED. Any declared animal is an automatic compliance violation. "
+                "Co-Signer Rules: guarantors accepted only if personal credit score exceeds 720."
+            ),
+            "metadata": {"doc_name": "building_rules_and_eligibility.md", "chunk_index": 2, "section": "Premium Studios 100-150"},
+            "distance": 0.25,
+        },
+    ]
+
+    print(f"[TOOL CALLED] retrieve_from_knowledge_base | query: {query!r}")
+    lines = []
+    for i, c in enumerate(_DUMMY_CHUNKS, start=1):
+        lines.append(f"[Result {i} | {c['metadata']['section']}]\n{c['document']}")
+    return "\n\n".join(lines)
 
 
 if __name__ == "__main__":
-    COLLECTION = "lease_docs"
     QUERY = "What are the rules about late payment fees?"
-
     result = retrieve_from_knowledge_base(QUERY)
-
-    print(f"Top {len(result.documents)} results for: '{QUERY}'\n")
-    for rank, (doc, meta, dist) in enumerate(
-        zip(result.documents, result.metadatas, result.distances), start=1
-    ):
-        print(f"[{rank}] distance={dist:.4f}  doc_name={meta.get('doc_name')}  chunk={meta.get('chunk_index')}")
-        print(f"    {doc}\n")
+    print(result)

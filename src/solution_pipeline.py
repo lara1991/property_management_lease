@@ -30,7 +30,12 @@ def process_lease_application(pdf_path: str) -> dict:
     analysis_result = run_agent(structured_data)
     print("------------------------------------")
     print(f"Analysis result: {analysis_result}")
-    return {"status": "success", "data": structured_data, "analysis": analysis_result}
+    return {
+        "status": "success",
+        "data": structured_data,
+        "analysis": analysis_result,
+        "tool_calls": analysis_result.get("tool_calls", []),
+    }
 
 
 if __name__ == "__main__":
