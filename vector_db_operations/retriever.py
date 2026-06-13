@@ -5,9 +5,11 @@ from dotenv import load_dotenv
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-load_dotenv()
+load_dotenv(".env")
 
-DEFAULT_PERSIST_DIR = "./chroma_db"
+DEFAULT_PERSIST_DIR = os.getenv("LOCAL_VDB_PATH")
+COLLECTION_NAME = os.getenv("COLLECTION")
+N_RESULTS = int(os.getenv("N_RESULTS", 3))  
 
 
 @dataclass
@@ -26,12 +28,14 @@ def _get_embedding_function() -> SentenceTransformerEmbeddingFunction:
         )
     return SentenceTransformerEmbeddingFunction(model_name=model_name)
 
+client = chromadb.PersistentClient(path=DEFAULT_PERSIST_DIR)
+embedding_fn = _get_embedding_function()
+collection = client.get_collection(
+    name=COLLECTION_NAME, embedding_function=embedding_fn
+)
 
-def retrieve(
+def retrieve_from_knowledge_base(
     query: str,
-    collection_name: str,
-    n_results: int = 5,
-    persist_directory: str = DEFAULT_PERSIST_DIR,
 ) -> RetrievalResult:
     """
     Retrieve the most relevant text chunks and their embeddings for a query.
@@ -41,24 +45,16 @@ def retrieve(
     results by cosine distance; lower distance means higher relevance.
 
     Args:
-        query:            Natural-language query string.
-        collection_name:  Name of the ChromaDB collection to search.
-        n_results:        Maximum number of chunks to return.
-        persist_directory: Path where ChromaDB persists data.
+        query: Natural-language query string.
 
     Returns:
         A :class:`RetrievalResult` with parallel lists of ids, documents,
         metadatas, and distances for each returned chunk.
     """
-    client = chromadb.PersistentClient(path=persist_directory)
-    embedding_fn = _get_embedding_function()
-    collection = client.get_collection(
-        name=collection_name, embedding_function=embedding_fn
-    )
 
     results = collection.query(
         query_texts=[query],
-        n_results=n_results,
+        n_results=N_RESULTS,
         include=["documents", "metadatas", "distances"],
     )
 
@@ -73,10 +69,9 @@ def retrieve(
 
 if __name__ == "__main__":
     COLLECTION = "lease_docs"
-    DB_PATH = "./chroma_db"
     QUERY = "What are the rules about late payment fees?"
 
-    result = retrieve(QUERY, collection_name=COLLECTION, n_results=3, persist_directory=DB_PATH)
+    result = retrieve_from_knowledge_base(QUERY)
 
     print(f"Top {len(result.documents)} results for: '{QUERY}'\n")
     for rank, (doc, meta, dist) in enumerate(

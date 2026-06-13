@@ -1,5 +1,6 @@
 from extract_pdf_data import extract_text_from_pdf
 from get_structured_output import get_structured_output
+from agent_execution import run_agent
 
 
 
@@ -26,7 +27,10 @@ def process_lease_application(pdf_path: str) -> dict:
         return {"status": "error", "message": structured_output_result["message"]}
 
     structured_data = structured_output_result["message"]
-    return {"status": "success", "data": structured_data}
+    analysis_result = run_agent(structured_data)
+    print("------------------------------------")
+    print(f"Analysis result: {analysis_result}")
+    return {"status": "success", "data": structured_data, "analysis": analysis_result}
 
 
 if __name__ == "__main__":

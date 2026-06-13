@@ -135,8 +135,8 @@ def delete_document(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    COLLECTION = "lease_docs"
-    DB_PATH = "./chroma_db"
+    COLLECTION = os.getenv("COLLECTION", "lease_docs")
+    DB_PATH = os.getenv("LOCAL_VDB_PATH", "./chroma_db")
 
     # --- 1. Create a collection -------------------------------------------
     create_collection(COLLECTION, DB_PATH)

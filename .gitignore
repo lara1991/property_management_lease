@@ -13,5 +13,4 @@ wheels/
 
 documents
 
-credentials.json
-token.json
+secrets
