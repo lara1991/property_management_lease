@@ -51,21 +51,6 @@ def get_structured_output(extracted_text: str) -> dict:
             temperature=0.0,  # Use deterministic output for structured data
         )
 
-
-        # response = completion(
-        #     model=f"openai/{MODEL_NAME}",
-        #     api_base=BASE_URL,
-        #     messages=[
-        #         {"role": "system", "content": system_prompt},
-        #         {
-        #             "role": "user",
-        #             "content": extracted_text
-        #         }
-        #     ],
-        #     response_format=LeaseApplication,
-        #     temperature=0.0,  # Use deterministic output for structured data
-        # )
-
         print(f"LLM response: {response}")
         print(type(response))
 

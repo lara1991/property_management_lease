@@ -10,6 +10,235 @@ import gradio as gr
 from extract_pdf_data import extract_text_from_pdf
 from get_structured_output import get_structured_output
 from agent_execution import stream_agent_async
+from email_handler import fetch_latest_pdf_attachment
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+DECISION_BADGE = {
+    "APPROVED": "🟢 APPROVED",
+    "FLAGGED":  "🟡 FLAGGED",
+    "REJECTED": "🔴 REJECTED",
+}
+
+def _parse_analysis_json(raw: str) -> dict | None:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except Exception:
+            pass
+    return None
+
+
+def _fmt_structured_data(data: dict) -> str:
+    lines = []
+    lines.append(f"**Applicant:** {data.get('applicant_name', 'N/A')}")
+    lines.append(f"**Email:** {data.get('applicant_email', 'N/A')}")
+    lines.append(f"**Unit:** {data.get('unit_id', 'N/A')}")
+
+    rent = data.get("monthly_rent", {})
+    lines.append(f"**Monthly Rent:** {rent.get('amount', 'N/A')} ({rent.get('written_form', 'N/A')})")
+
+    income = data.get("monthly_income", {})
+    confirmed = "✅ confirmed" if income.get("confirmed") else "⚠️ unconfirmed"
+    lines.append(f"**Monthly Income:** {income.get('amount', 'N/A')} — {confirmed}")
+    if income.get("confirmed_by") and income["confirmed_by"] != "N/A":
+        lines.append(f"  Confirmed by: {income['confirmed_by']}")
+
+    if data.get("pet_ownership"):
+        pets = data.get("pets", {})
+        qty = pets.get("all_pets_quantity", 0)
+        lines.append(f"**Pets:** {qty} declared")
+        for p in pets.get("all_pets", []):
+            lines.append(
+                f"  • {p.get('type', 'N/A')} | breed: {p.get('breed', 'N/A')} "
+                f"| weight: {p.get('weight', 'N/A')}"
+            )
+    else:
+        lines.append("**Pets:** None declared")
+
+    if data.get("additional_comments") and data["additional_comments"] != "N/A":
+        lines.append(f"**Comments:** {data['additional_comments']}")
+
+    return "\n\n".join(lines)
+
+
+def _fmt_tool_calls(tool_calls: list) -> tuple[str, str]:
+    if not tool_calls:
+        return "_No tool calls recorded._", "_No documents retrieved._"
+
+    calls_lines = []
+    docs_lines = []
+    for i, tc in enumerate(tool_calls, start=1):
+        calls_lines.append(f"**Call {i}** — `{tc['name']}`")
+        calls_lines.append(f"> Query: *{tc['query']}*")
+        status = "✅ result received" if tc.get("result") else "⏳ waiting for result..."
+        calls_lines.append(f"> Status: {status}")
+        calls_lines.append("")
+
+        docs_lines.append(f"### Call {i} — `{tc['query']}`")
+        if tc.get("result"):
+            docs_lines.append(tc["result"])
+        else:
+            docs_lines.append("_⏳ Retrieving..._")
+        docs_lines.append("")
+
+    return "\n".join(calls_lines), "\n".join(docs_lines)
+
+
+def _fmt_analysis(parsed: dict) -> str:
+    decision = parsed.get("decision", "UNKNOWN")
+    badge = DECISION_BADGE.get(decision, decision)
+    check_icon = lambda v: "✅" if v == "PASS" else ("❌" if v == "FAIL" else "⚠️")
+
+    lines = [
+        f"## {badge}",
+        "",
+        "| Check | Result |",
+        "|---|---|",
+        f"| Income-to-Rent Ratio | **{parsed.get('income_to_rent_ratio', 'N/A')}** |",
+        f"| Income Check | {check_icon(parsed.get('income_check'))} {parsed.get('income_check', 'N/A')} |",
+        f"| Pet Check | {check_icon(parsed.get('pet_check'))} {parsed.get('pet_check', 'N/A')} |",
+        f"| Completeness Check | {check_icon(parsed.get('completeness_check'))} {parsed.get('completeness_check', 'N/A')} |",
+        "",
+    ]
+
+    reasons = parsed.get("reasons", [])
+    if reasons:
+        lines.append("**Reasons:**")
+        for r in reasons:
+            lines.append(f"- {r}")
+        lines.append("")
+
+    notes = parsed.get("notes", "")
+    if notes:
+        lines.append(f"**Notes:** {notes}")
+
+    return "\n".join(lines)
+
+
+# ── streaming pipeline ────────────────────────────────────────────────────────
+
+_IDLE = (
+    "_Waiting..._",   # email_info
+    "_Waiting..._",   # structured
+    "_Waiting..._",   # tool_calls
+    "_Waiting..._",   # retrieved_docs
+    "_Waiting..._",   # analysis
+)
+
+async def run_pipeline():
+    email_md = "⏳ **Fetching latest PDF attachment from email...**"
+    structured_md, calls_md, docs_md, analysis_md = "_Waiting..._", "_Waiting..._", "_Waiting..._", "_Waiting..._"
+    yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+    # ── step 1: fetch email ──────────────────────────────────────────────────
+    email_result = await asyncio.to_thread(fetch_latest_pdf_attachment)
+    if email_result["status"] != "success":
+        yield (f"❌ Email fetch failed: {email_result.get('message')}", structured_md, calls_md, docs_md, analysis_md)
+        return
+
+    email_md = (
+        f"**From:** {email_result.get('sender', 'N/A')}\n\n"
+        f"**Subject:** {email_result.get('subject', 'N/A')}\n\n"
+        f"**Attachment saved to:** `{email_result.get('pdf_path')}`"
+    )
+    structured_md = "⏳ **Extracting and parsing application fields...**"
+    yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+    # ── step 2: extract PDF ──────────────────────────────────────────────────
+    pdf_path = email_result["pdf_path"]
+    extraction = await asyncio.to_thread(extract_text_from_pdf, pdf_path)
+    if extraction["status"] != "success":
+        yield (email_md, f"❌ Extraction failed: {extraction.get('message')}", calls_md, docs_md, analysis_md)
+        return
+
+    # ── step 3: structured output ────────────────────────────────────────────
+    structured_result = await asyncio.to_thread(get_structured_output, extraction["text"])
+    if structured_result["status"] != "success":
+        yield (email_md, f"❌ Parsing failed: {structured_result.get('message')}", calls_md, docs_md, analysis_md)
+        return
+
+    structured_data = structured_result["message"]
+    structured_md = _fmt_structured_data(structured_data)
+    calls_md = "⏳ **Agent is querying policy knowledge base...**"
+    yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+    # ── step 4: stream agent ─────────────────────────────────────────────────
+    async for event in stream_agent_async(structured_data):
+        etype = event["type"]
+
+        if etype == "error":
+            analysis_md = f"❌ Agent error: {event['message']}"
+            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+            return
+
+        elif etype == "tool_call":
+            calls_md, docs_md = _fmt_tool_calls(event["all_calls"])
+            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+        elif etype == "tool_result":
+            calls_md, docs_md = _fmt_tool_calls(event["all_calls"])
+            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+        elif etype == "final":
+            calls_md, docs_md = _fmt_tool_calls(event.get("tool_calls", []))
+            parsed = _parse_analysis_json(event["response"])
+            if parsed:
+                analysis_md = _fmt_analysis(parsed)
+            else:
+                analysis_md = "⚠️ _Model did not return structured JSON. Raw response:_\n\n" + event["response"]
+            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+
+SECTION_STYLE = "border-left: 3px solid #ccc; padding-left: 12px; margin-bottom: 8px;"
+
+with gr.Blocks(title="Lease Application Analyzer") as demo:
+    gr.Markdown("# 🏢 Lease Application Analyzer\nFetches the latest unread PDF attachment from Gmail and runs the full compliance pipeline. All steps appear live as they complete.")
+
+    fetch_btn = gr.Button("📧 Fetch & Analyze Latest Email", variant="primary", size="lg")
+
+    gr.Markdown("---")
+
+    gr.Markdown("### 📨 Email Source")
+    email_out = gr.Markdown(value="_Press the button to start._")
+
+    gr.Markdown("---")
+
+    gr.Markdown("### 📋 Extracted Application Data")
+    structured_out = gr.Markdown(value="_Waiting..._")
+
+    gr.Markdown("---")
+
+    gr.Markdown("### 🔍 Agent Tool Calls")
+    tool_calls_out = gr.Markdown(value="_Waiting..._")
+
+    gr.Markdown("---")
+
+    gr.Markdown("### 📚 Retrieved Policy Documents")
+    retrieved_out = gr.Markdown(value="_Waiting..._")
+
+    gr.Markdown("---")
+
+    gr.Markdown("### ⚖️ Analysis Decision")
+    analysis_out = gr.Markdown(value="_Waiting..._")
+
+    fetch_btn.click(
+        fn=run_pipeline,
+        inputs=[],
+        outputs=[email_out, structured_out, tool_calls_out, retrieved_out, analysis_out],
+    )
+
+if __name__ == "__main__":
+    demo.launch(theme=gr.themes.Soft())
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 

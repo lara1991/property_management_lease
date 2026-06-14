@@ -1,6 +1,7 @@
 from extract_pdf_data import extract_text_from_pdf
 from get_structured_output import get_structured_output
 from agent_execution import run_agent
+from email_handler import fetch_latest_pdf_attachment
 
 
 
@@ -29,7 +30,7 @@ def process_lease_application(pdf_path: str) -> dict:
     structured_data = structured_output_result["message"]
     analysis_result = run_agent(structured_data)
     print("------------------------------------")
-    print(f"Analysis result: {analysis_result}")
+    # print(f"Analysis result: {analysis_result}")
     return {
         "status": "success",
         "data": structured_data,
@@ -41,10 +42,18 @@ def process_lease_application(pdf_path: str) -> dict:
 if __name__ == "__main__":
     pdf_file = "synthetic_data/mock_inputs/pet_violation.pdf"
     pdf_file = "synthetic_data/mock_inputs/malformed.pdf"
-    pdf_file = "synthetic_data/mock_inputs/perfect_app.pdf"
-    result = process_lease_application(pdf_file)
+    # pdf_file = "synthetic_data/mock_inputs/perfect_app.pdf"
+
+    # Step 0: Fetch the latest PDF attachment (if no path provided)
+    email_result = fetch_latest_pdf_attachment()
+    if email_result["status"] != "success":
+        print(f"Error: {email_result['message']}")
+        exit(1)
+    pdf_path = email_result["pdf_path"]
+
+    result = process_lease_application(pdf_path)
     if result["status"] == "success":
         print("Structured Data:")
-        print(result["data"])
+        print(result["analysis"])
     else:
         print(f"Error: {result['message']}")
