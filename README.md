@@ -244,6 +244,9 @@ Click **📧 Fetch & Analyze Latest Email** to trigger the full pipeline. All st
 | 📚 Retrieved Policy Documents | As each tool result returns |
 | ⚖️ Analysis Decision | After the agent produces the final JSON |
 
+> **Note — emails are not marked as read automatically.**
+> This is intentional. The pipeline always targets the **latest unread email with a PDF attachment**. If you want to process the older emails, manually open and mark the latest emails as read in Gmail first — otherwise every run will re-analyse the 'latest unread email which has a pdf attachment'.
+
 ---
 
 ### Step 7 (optional) — Run the CLI pipeline
