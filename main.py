@@ -75,17 +75,31 @@ def _fmt_tool_calls(tool_calls: list) -> tuple[str, str]:
     calls_lines = []
     docs_lines = []
     for i, tc in enumerate(tool_calls, start=1):
-        calls_lines.append(f"**Call {i}** — `{tc['name']}`")
-        calls_lines.append(f"> Query: *{tc['query']}*")
-        status = "✅ result received" if tc.get("result") else "⏳ waiting for result..."
+        name = tc["name"]
+        is_reply = name == "reply_email_tool"
+        label = tc.get("query", "")
+
+        calls_lines.append(f"**Call {i}** — `{name}`")
+        if is_reply:
+            calls_lines.append("> Action: *Sending reply email to applicant*")
+        else:
+            calls_lines.append(f"> Query: *{label}*")
+        status = "✅ done" if tc.get("result") else "⏳ waiting..."
         calls_lines.append(f"> Status: {status}")
         calls_lines.append("")
 
-        docs_lines.append(f"### Call {i} — `{tc['query']}`")
-        if tc.get("result"):
-            docs_lines.append(tc["result"])
+        if is_reply:
+            docs_lines.append(f"### Call {i} — Reply Email Sent")
+            if tc.get("result"):
+                docs_lines.append(tc["result"])
+            else:
+                docs_lines.append("_⏳ Sending..._")
         else:
-            docs_lines.append("_⏳ Retrieving..._")
+            docs_lines.append(f"### Call {i} — `{label}`")
+            if tc.get("result"):
+                docs_lines.append(tc["result"])
+            else:
+                docs_lines.append("_⏳ Retrieving..._")
         docs_lines.append("")
 
     return "\n".join(calls_lines), "\n".join(docs_lines)
@@ -170,7 +184,7 @@ async def run_pipeline():
     yield (email_md, structured_md, calls_md, docs_md, analysis_md)
 
     # ── step 4: stream agent ─────────────────────────────────────────────────
-    async for event in stream_agent_async(structured_data):
+    async for event in stream_agent_async(structured_data, email_data=email_result):
         etype = event["type"]
 
         if etype == "error":

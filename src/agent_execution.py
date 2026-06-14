@@ -8,7 +8,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part
 
 from analysis_agent import get_analysis_agent
-from vector_db_operations.retriever import retrieve_from_knowledge_base
+from agent_tools import get_all_tools
 
 APP_NAME = "Lease Application Analysis"
 
@@ -16,13 +16,19 @@ session_service = InMemorySessionService()
 
 
 async def _run_agent_async(input_data: dict, user_id: str, session_id: str) -> dict:
+    structured_data = input_data.get("structured_data", {})
+    email_data = input_data.get("email_result", {})
+    
     await session_service.create_session(
         app_name=APP_NAME,
         user_id=user_id,
         session_id=session_id,
+        state={"email_data": email_data}
     )
 
-    agent_result = get_analysis_agent(tools=[retrieve_from_knowledge_base])
+
+    tools = get_all_tools()
+    agent_result = get_analysis_agent(tools=tools["analysis_agent_tools"])
     if agent_result["status"] != "success":
         return {"status": "error", "message": agent_result["message"]}
 
@@ -32,7 +38,7 @@ async def _run_agent_async(input_data: dict, user_id: str, session_id: str) -> d
         app_name=APP_NAME,
     )
 
-    message_text = json.dumps(input_data, indent=2)
+    message_text = json.dumps(structured_data, indent=2)
 
     tool_calls = []
     final_response = None
@@ -45,19 +51,14 @@ async def _run_agent_async(input_data: dict, user_id: str, session_id: str) -> d
             for part in event.content.parts:
                 if hasattr(part, "function_call") and part.function_call:
                     print(f"[AGENT] tool call  → {part.function_call.name}({part.function_call.args})")
+                    args = dict(part.function_call.args)
+                    label = args.get("query") or args.get("response", "")[:80]
                     tool_calls.append({
                         "name": part.function_call.name,
-                        "query": part.function_call.args.get("query", ""),
+                        "args": args,
+                        "query": label,
                         "result": None,
                     })
-                elif hasattr(part, "function_response") and part.function_response:
-                    print(f"[AGENT] tool result ← {part.function_response.name}")
-                    resp = part.function_response.response
-                    result_text = resp.get("result", str(resp)) if isinstance(resp, dict) else str(resp)
-                    for entry in reversed(tool_calls):
-                        if entry["name"] == part.function_response.name and entry["result"] is None:
-                            entry["result"] = result_text
-                            break
         if event.is_final_response():
             final_response = event.content.parts[0].text
 
@@ -72,6 +73,7 @@ def run_agent(input_data: dict, user_id: str = "default_user", session_id: str =
 
 async def stream_agent_async(
     input_data: dict,
+    email_data: dict | None = None,
     user_id: str = "gradio_user",
 ) -> AsyncGenerator[dict, None]:
     """
@@ -88,9 +90,11 @@ async def stream_agent_async(
         app_name=APP_NAME,
         user_id=user_id,
         session_id=session_id,
+        state={"email_data": email_data or {}},
     )
 
-    agent_result = get_analysis_agent(tools=[retrieve_from_knowledge_base])
+    tools = get_all_tools()
+    agent_result = get_analysis_agent(tools=tools["analysis_agent_tools"])
     if agent_result["status"] != "success":
         yield {"type": "error", "message": agent_result["message"]}
         return
@@ -112,9 +116,12 @@ async def stream_agent_async(
         if event.content and event.content.parts:
             for part in event.content.parts:
                 if hasattr(part, "function_call") and part.function_call:
+                    args = dict(part.function_call.args)
+                    label = args.get("query") or args.get("response", "")[:80]
                     entry = {
                         "name": part.function_call.name,
-                        "query": part.function_call.args.get("query", ""),
+                        "args": args,
+                        "query": label,
                         "result": None,
                     }
                     tool_calls.append(entry)

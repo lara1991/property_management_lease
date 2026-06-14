@@ -10,8 +10,11 @@ from googleapiclient.discovery import build
 
 load_dotenv()
 
-# Read-only scope is enough — we only need to fetch emails
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# We use the Gmail API with read-only and send permissions. Adjust scopes as needed.
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 
 CREDENTIALS_FILE = os.getenv("GMAIL_CREDENTIALS_FILE", "credentials.json")
 TOKEN_FILE = os.getenv("GMAIL_TOKEN_FILE", "token.json")
@@ -91,6 +94,8 @@ def fetch_latest_pdf_attachment(service=None) -> dict:
         sender = headers.get("From", "Unknown")
         subject = headers.get("Subject", "No Subject")
         body = _extract_body(message["payload"])
+        thread_id = message.get("threadId")
+        rfc822_msg_id = headers.get("Message-ID")
 
         # Walk message parts to find the first PDF attachment
         pdf_part = _find_pdf_part(message["payload"])
@@ -117,6 +122,8 @@ def fetch_latest_pdf_attachment(service=None) -> dict:
             "sender": sender,
             "subject": subject,
             "body": body,
+            "thread_id": thread_id,
+            "rfc822_msg_id": rfc822_msg_id,
         }
 
     except Exception as e:
@@ -178,6 +185,65 @@ def _find_pdf_part(payload: dict) -> dict | None:
 
     return None
 
+from email.mime.text import MIMEText
+import base64
+
+
+def send_reply_email(
+    to_address: str,
+    subject: str,
+    body: str,
+    thread_id: str | None = None,
+    message_id: str | None = None,
+) -> dict:
+    """
+    Send a new email or reply to an existing email thread.
+
+    If thread_id and message_id are supplied, the email is sent as a reply.
+    Otherwise a new email is created.
+    """
+    try:
+        service = authenticate_gmail()
+
+        msg = MIMEText(body)
+        msg["To"] = to_address
+        msg["Subject"] = subject
+
+        # Reply headers
+        if message_id:
+            msg["In-Reply-To"] = message_id
+            msg["References"] = message_id
+
+        raw_message = base64.urlsafe_b64encode(
+            msg.as_bytes()
+        ).decode()
+
+        gmail_message = {
+            "raw": raw_message
+        }
+
+        # Required for proper Gmail threading
+        if thread_id:
+            gmail_message["threadId"] = thread_id
+
+        sent = (
+            service.users()
+            .messages()
+            .send(userId="me", body=gmail_message)
+            .execute()
+        )
+
+        return {
+            "status": "success",
+            "message": "Email sent successfully.",
+            "gmail_message_id": sent["id"],
+            "thread_id": sent.get("threadId"),
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 if __name__ == "__main__":
     result = fetch_latest_pdf_attachment()
     if result["status"] == "success":
@@ -186,5 +252,7 @@ if __name__ == "__main__":
         print(f"Subject: {result['subject']}")
         print(f"Body: {result['body'][:100]}...")  # Print first 100 chars of body
         print(f"PDF saved to: {result['pdf_path']}")
+        print(f"Thread ID: {result['thread_id']}")
+        print(f"RFC822 Message ID: {result['rfc822_msg_id']}")
     else:
         print(f"Error: {result['message']}")

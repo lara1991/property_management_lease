@@ -5,7 +5,7 @@ from email_handler import fetch_latest_pdf_attachment
 
 
 
-def process_lease_application(pdf_path: str) -> dict:
+def process_lease_application(pdf_path: str, email_result: dict) -> dict:
     """
     Process a lease application PDF and return structured data.
 
@@ -28,7 +28,12 @@ def process_lease_application(pdf_path: str) -> dict:
         return {"status": "error", "message": structured_output_result["message"]}
 
     structured_data = structured_output_result["message"]
-    analysis_result = run_agent(structured_data)
+
+    input_to_agent_processing = {
+        "structured_data": structured_data,
+        "email_result": email_result,
+    }
+    analysis_result = run_agent(input_to_agent_processing)
     print("------------------------------------")
     # print(f"Analysis result: {analysis_result}")
     return {
@@ -51,7 +56,7 @@ if __name__ == "__main__":
         exit(1)
     pdf_path = email_result["pdf_path"]
 
-    result = process_lease_application(pdf_path)
+    result = process_lease_application(pdf_path,email_result)
     if result["status"] == "success":
         print("Structured Data:")
         print(result["analysis"])
