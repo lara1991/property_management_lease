@@ -1,7 +1,6 @@
 # 📊 Apex Property Management: Live Occupancy & Unit Availability Ledger
 
 **Document ID:** AP-OPS-2026-Q2  
-**Last Updated:** Current Processing Cycle  
 **Classification:** Internal Operational Use Only  
 
 This ledger contains the real-time status, unit tiers, monthly base rents, and immediate availability markers for managed properties. Automated intake graphs must cross-reference this registry before confirming any lease approvals.
@@ -22,7 +21,6 @@ This ledger contains the real-time status, unit tiers, monthly base rents, and i
 * **Listed Base Rent:** $1,250.00 / month
 * **Current Status:** **OCCUPIED**
 * **Available Move-in Date:** Leased through October 2026
-* **Operational Notes:** Tenant in place. Applications accepted for waitlist positioning only.
 
 ---
 
@@ -32,8 +30,6 @@ This ledger contains the real-time status, unit tiers, monthly base rents, and i
 * **Unit Type:** 3-Bedroom / 2.5-Bathroom (Private Yard)
 * **Listed Base Rent:** $2,800.00 / month
 * **Current Status:** **AVAILABLE**
-* **Available Move-in Date:** First of next month
-* **Operational Notes:** Fenced yard fully inspected. High pet compatibility rating.
 
 ---
 
