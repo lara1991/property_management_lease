@@ -20,13 +20,19 @@ class RetrievalResult:
     distances: list[float]
 
 
+_embedding_fn: SentenceTransformerEmbeddingFunction | None = None
+
+
 def _get_embedding_function() -> SentenceTransformerEmbeddingFunction:
-    model_name = os.getenv("EMBEDDING_MODEL")
-    if not model_name:
-        raise ValueError(
-            "EMBEDDING_MODEL is not set. Add it to your .env file."
-        )
-    return SentenceTransformerEmbeddingFunction(model_name=model_name)
+    global _embedding_fn
+    if _embedding_fn is None:
+        model_name = os.getenv("EMBEDDING_MODEL")
+        if not model_name:
+            raise ValueError(
+                "EMBEDDING_MODEL is not set. Add it to your .env file."
+            )
+        _embedding_fn = SentenceTransformerEmbeddingFunction(model_name=model_name)
+    return _embedding_fn
 
 def retrieve_from_knowledge_base(
     query: str,
@@ -47,63 +53,27 @@ def retrieve_from_knowledge_base(
         Relevant policy excerpts as plain text, ranked by relevance.
     """
 
-    # client = chromadb.PersistentClient(path=DEFAULT_PERSIST_DIR)
-    # embedding_fn = _get_embedding_function()
-    # collection = client.get_collection(
-    #     name=COLLECTION_NAME, embedding_function=embedding_fn
-    # )
-    # results = collection.query(
-    #     query_texts=[query],
-    #     n_results=N_RESULTS,
-    #     include=["documents", "metadatas", "distances"],
-    # )
-
-    # --- DUMMY DATA: remove when vector DB is ready ---
-    _DUMMY_CHUNKS = [
-        {
-            "id": "chunk_001",
-            "document": (
-                "Section 1: Standard Multi-Family Units (Apt 400 - Apt 499). "
-                "Target units: Apt 402, Apt 405, Apt 410. "
-                "Income-to-Rent Ratio: applicant must demonstrate a verified gross monthly income of at least 3.0x "
-                "the stated base rental price. "
-                "Pet Policy: domesticated cats and dogs permitted up to a maximum of 25 lbs per animal. "
-                "Large breeds or exotic pets require written manual exception forms. "
-                "Occupancy Limit: maximum 2 residents per studio/1-bedroom configuration."
-            ),
-            "metadata": {"doc_name": "building_rules_and_eligibility.md", "chunk_index": 0, "section": "Apt 400-499"},
-            "distance": 0.12,
-        },
-        {
-            "id": "chunk_002",
-            "document": (
-                "Section 2: Residential Townhouse Clusters (Suite A - Suite Z). "
-                "Target units: Townhouse Suite B, Townhouse Suite F. "
-                "Income-to-Rent Ratio: baseline income requires a 2.5x multiplier relative to base rent. "
-                "Pet Policy: medium/large breed animals allowed up to 75 lbs per animal due to private yard access. "
-                "Occupancy Limit: maximum 4 residents per layout."
-            ),
-            "metadata": {"doc_name": "building_rules_and_eligibility.md", "chunk_index": 1, "section": "Townhouse Suite A-Z"},
-            "distance": 0.18,
-        },
-        {
-            "id": "chunk_003",
-            "document": (
-                "Section 3: Premium Studios (Studio 100 - Studio 150). "
-                "Target units: Luxury Studio 101, Luxury Studio 102. "
-                "Income-to-Rent Ratio: high density urban tiers mandate a 3.5x verified underwriting threshold. "
-                "Pet Policy: STRICTLY NO PETS ALLOWED. Any declared animal is an automatic compliance violation. "
-                "Co-Signer Rules: guarantors accepted only if personal credit score exceeds 720."
-            ),
-            "metadata": {"doc_name": "building_rules_and_eligibility.md", "chunk_index": 2, "section": "Premium Studios 100-150"},
-            "distance": 0.25,
-        },
-    ]
+    client = chromadb.PersistentClient(path=DEFAULT_PERSIST_DIR)
+    embedding_fn = _get_embedding_function()
+    collection = client.get_collection(
+        name=COLLECTION_NAME, embedding_function=embedding_fn
+    )
+    results = collection.query(
+        query_texts=[query],
+        n_results=N_RESULTS,
+        include=["documents", "metadatas", "distances"],
+    )
 
     print(f"[TOOL CALLED] retrieve_from_knowledge_base | query: {query!r}")
+
+    documents = results["documents"][0]
+    metadatas = results["metadatas"][0]
+    distances = results["distances"][0]
+
     lines = []
-    for i, c in enumerate(_DUMMY_CHUNKS, start=1):
-        lines.append(f"[Result {i} | {c['metadata']['section']}]\n{c['document']}")
+    for i, (doc, meta, dist) in enumerate(zip(documents, metadatas, distances), start=1):
+        label = f"{meta.get('doc_name')}  chunk {meta.get('chunk_index')}  dist={dist:.4f}"
+        lines.append(f"[Result {i} | {label}]\n{doc}")
     return "\n\n".join(lines)
 
 
