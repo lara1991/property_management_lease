@@ -17,6 +17,23 @@ An end-to-end agentic pipeline that:
 
 ---
 
+## Business Use Case
+
+**Apex Property Management** receives residential lease applications as PDF attachments via email. Each application contains applicant details (income, pets, requested unit), but reviewing them manually against building rules and underwriting policies is slow and error-prone.
+
+This system automates that workflow:
+
+- A prospective tenant emails their completed lease application as a PDF.
+- The agent extracts key fields (name, unit, monthly income, pet details) and cross-references them against three internal policy documents: building eligibility rules, pet and occupancy limits, and credit underwriting thresholds.
+- Based on the evaluation it reaches one of three outcomes:
+  - **APPROVED** — all checks pass; applicant receives a confirmation email.
+  - **FLAGGED** — something is ambiguous or unconfirmed (e.g. income not verified); applicant is asked to follow up, and the case is held for human review.
+  - **REJECTED** — a hard policy violation (e.g. pet exceeds weight limit, income critically below threshold); applicant receives a polite rejection.
+
+The three synthetic test scenarios cover a clean approval, a pet policy violation, and a malformed/incomplete application.
+
+---
+
 ## Architecture & Flow
 
 ```mermaid
