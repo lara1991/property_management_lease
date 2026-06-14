@@ -157,57 +157,62 @@ async def run_pipeline():
         yield (f"❌ Email fetch failed: {email_result.get('message')}", structured_md, calls_md, docs_md, analysis_md)
         return
 
+    pdf_path = email_result["pdf_path"]
     email_md = (
         f"**From:** {email_result.get('sender', 'N/A')}\n\n"
         f"**Subject:** {email_result.get('subject', 'N/A')}\n\n"
-        f"**Attachment saved to:** `{email_result.get('pdf_path')}`"
+        f"**Attachment:** `{Path(pdf_path).name}`"
     )
     structured_md = "⏳ **Extracting and parsing application fields...**"
     yield (email_md, structured_md, calls_md, docs_md, analysis_md)
 
-    # ── step 2: extract PDF ──────────────────────────────────────────────────
-    pdf_path = email_result["pdf_path"]
-    extraction = await asyncio.to_thread(extract_text_from_pdf, pdf_path)
-    if extraction["status"] != "success":
-        yield (email_md, f"❌ Extraction failed: {extraction.get('message')}", calls_md, docs_md, analysis_md)
-        return
-
-    # ── step 3: structured output ────────────────────────────────────────────
-    structured_result = await asyncio.to_thread(get_structured_output, extraction["text"])
-    if structured_result["status"] != "success":
-        yield (email_md, f"❌ Parsing failed: {structured_result.get('message')}", calls_md, docs_md, analysis_md)
-        return
-
-    structured_data = structured_result["message"]
-    structured_md = _fmt_structured_data(structured_data)
-    calls_md = "⏳ **Agent is querying policy knowledge base...**"
-    yield (email_md, structured_md, calls_md, docs_md, analysis_md)
-
-    # ── step 4: stream agent ─────────────────────────────────────────────────
-    async for event in stream_agent_async(structured_data, email_data=email_result):
-        etype = event["type"]
-
-        if etype == "error":
-            analysis_md = f"❌ Agent error: {event['message']}"
-            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+    try:
+        # ── step 2: extract PDF ──────────────────────────────────────────────
+        extraction = await asyncio.to_thread(extract_text_from_pdf, pdf_path)
+        if extraction["status"] != "success":
+            yield (email_md, f"❌ Extraction failed: {extraction.get('message')}", calls_md, docs_md, analysis_md)
             return
 
-        elif etype == "tool_call":
-            calls_md, docs_md = _fmt_tool_calls(event["all_calls"])
-            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+        # ── step 3: structured output ────────────────────────────────────────
+        structured_result = await asyncio.to_thread(get_structured_output, extraction["text"])
+        if structured_result["status"] != "success":
+            yield (email_md, f"❌ Parsing failed: {structured_result.get('message')}", calls_md, docs_md, analysis_md)
+            return
 
-        elif etype == "tool_result":
-            calls_md, docs_md = _fmt_tool_calls(event["all_calls"])
-            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+        structured_data = structured_result["message"]
+        structured_md = _fmt_structured_data(structured_data)
+        calls_md = "⏳ **Agent is querying policy knowledge base...**"
+        yield (email_md, structured_md, calls_md, docs_md, analysis_md)
 
-        elif etype == "final":
-            calls_md, docs_md = _fmt_tool_calls(event.get("tool_calls", []))
-            parsed = _parse_analysis_json(event["response"])
-            if parsed:
-                analysis_md = _fmt_analysis(parsed)
-            else:
-                analysis_md = "⚠️ _Model did not return structured JSON. Raw response:_\n\n" + event["response"]
-            yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+        # ── step 4: stream agent ─────────────────────────────────────────────
+        async for event in stream_agent_async(structured_data, email_data=email_result):
+            etype = event["type"]
+
+            if etype == "error":
+                analysis_md = f"❌ Agent error: {event['message']}"
+                yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+                return
+
+            elif etype == "tool_call":
+                calls_md, docs_md = _fmt_tool_calls(event["all_calls"])
+                yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+            elif etype == "tool_result":
+                calls_md, docs_md = _fmt_tool_calls(event["all_calls"])
+                yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+            elif etype == "final":
+                calls_md, docs_md = _fmt_tool_calls(event.get("tool_calls", []))
+                parsed = _parse_analysis_json(event["response"])
+                if parsed:
+                    analysis_md = _fmt_analysis(parsed)
+                else:
+                    analysis_md = "⚠️ _Model did not return structured JSON. Raw response:_\n\n" + event["response"]
+                yield (email_md, structured_md, calls_md, docs_md, analysis_md)
+
+    finally:
+        # ── cleanup: delete the temp PDF regardless of success or failure ────
+        Path(pdf_path).unlink(missing_ok=True)
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────

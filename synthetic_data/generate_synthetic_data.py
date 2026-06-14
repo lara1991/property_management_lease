@@ -174,7 +174,7 @@ def build_complete_dataset():
         "Contact Email Address": "sarah.j-91@outlook.co.uk",
         "Requested Unit Code / ID": "Apt #402 (Level 4)",
         "Base Monthly Rent Amount": "$1,500.00 (+ $50 storage locker fee items)",
-        "Gross Monthly Income": "4500 USD base salary + approx 1000 USD variable performance bonus",
+        "Gross Monthly Income": "4500 USD base salary + approx 1000 USD variable performance bonus, confirmed by HR",
         "Background Credit Score": "740 (Verified via TransUnion pull)",
         "Household Pet Declaration": "Yes, pulling forward 1 cat details",
         "Pet Weight Specifications": "Around ~14-15 lbs max when last checked at the vet"
