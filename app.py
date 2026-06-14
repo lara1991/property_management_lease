@@ -217,7 +217,9 @@ SECTION_STYLE = "border-left: 3px solid #ccc; padding-left: 12px; margin-bottom:
 with gr.Blocks(title="Lease Application Analyzer") as demo:
     gr.Markdown("# 🏢 Lease Application Analyzer\nFetches the latest unread PDF attachment from Gmail and runs the full compliance pipeline. All steps appear live as they complete.")
 
-    fetch_btn = gr.Button("📧 Fetch & Analyze Latest Email", variant="primary", size="lg")
+    with gr.Row():
+        fetch_btn = gr.Button("📧 Fetch & Analyze Latest Email", variant="primary", size="lg")
+        clear_btn = gr.Button("🗑️ Clear", variant="secondary", size="lg")
 
     gr.Markdown("---")
 
@@ -246,6 +248,12 @@ with gr.Blocks(title="Lease Application Analyzer") as demo:
 
     fetch_btn.click(
         fn=run_pipeline,
+        inputs=[],
+        outputs=[email_out, structured_out, tool_calls_out, retrieved_out, analysis_out],
+    )
+
+    clear_btn.click(
+        fn=lambda: ("_Press the button to start._", "_Waiting..._", "_Waiting..._", "_Waiting..._", "_Waiting..._"),
         inputs=[],
         outputs=[email_out, structured_out, tool_calls_out, retrieved_out, analysis_out],
     )

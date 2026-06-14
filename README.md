@@ -84,7 +84,7 @@ The LiteLLM integration means any OpenAI-compatible endpoint works (swap `LLM_MO
 
 ```
 lease_application_proj/
-├── main.py                          # Gradio UI entry point
+├── app.py                           # Gradio UI entry point
 ├── pyproject.toml
 ├── .env.example                     # Copy to .env and fill in values
 ├── secrets/
@@ -212,7 +212,7 @@ Query : 'pet weight limit Apt 402'
 ### Step 6 — Run the Gradio UI
 
 ```bash
-uv run main.py
+uv run app.py
 ```
 
 Open **http://127.0.0.1:7860** in your browser.
